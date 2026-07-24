@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { usePlayerStore, displayAlbum, type LyricLine, type TrackInfo } from '@/stores/player'
 import { useLikedSongsStore } from '@/stores/likedSongs'
+import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastStore } from '@/stores/toast'
 import { useDownloadStore } from '@/stores/download'
@@ -35,6 +36,7 @@ import CoverBlurBackground from './CoverBlurBackground.vue'
 import BilibiliCoverImage from './BilibiliCoverImage.vue'
 import WaveformSlider from './WaveformSlider.vue'
 import LyricsView from './LyricsView.vue'
+import NowPlayingViewSwitch from './NowPlayingViewSwitch.vue'
 import QueuePanel from './QueuePanel.vue'
 import AddToPlaylistDialog from './AddToPlaylistDialog.vue'
 import ListenTogetherPanel from './ListenTogetherPanel.vue'
@@ -43,6 +45,10 @@ import EditableRangeValue from './ui/EditableRangeValue.vue'
 import ContextMenu from './ui/ContextMenu.vue'
 import type { ContextMenuActionItem } from '@/utils/contextMenu'
 import { playbackSessionTrackKey } from '@/modules/playback/playbackRequest'
+import {
+  resolveNowPlayingViewMode,
+  type NowPlayingViewMode,
+} from '@/modules/nowPlaying/viewMode'
 import { createLogger } from '@/utils/logger'
 import { getTrackCoverUrl } from '@/utils/trackCover'
 import { summarizeLogError } from '@/utils/logSanitizer'
@@ -56,13 +62,14 @@ const props = defineProps<{
 }>()
 const player = usePlayerStore()
 const likedSongs = useLikedSongsStore()
+const auth = useAuthStore()
 const settings = useSettingsStore()
 const toast = useToastStore()
 const downloadStore = useDownloadStore()
 const lyricOffsetStore = useLyricOffsetStore()
 const router = useRouter()
 const { t } = useI18n()
-const playViewMode = ref<'cover' | 'lyrics'>('cover')
+const playViewMode = ref<NowPlayingViewMode>('cover')
 const coverLoadError = ref(false)
 const coverUrl = ref('')
 const showVolumeSlider = ref(false)
@@ -650,9 +657,16 @@ function onLyricSeek(ms: number) {
 }
 
 const isFavorite = computed(() => likedSongs.isTrackLiked(player.currentTrack))
+const canToggleFavorite = computed(() => {
+  const track = player.currentTrack
+  return !!track && (!track.id.startsWith('netease:') || auth.canMutateNetease)
+})
 
 async function toggleFavorite() {
-  await likedSongs.toggleTrack(player.currentTrack)
+  if (!canToggleFavorite.value) return
+  await likedSongs.toggleTrack(player.currentTrack, {
+    neteaseAuthorized: auth.canMutateNetease,
+  })
 }
 
 // 睡眠定时器选项
@@ -1002,6 +1016,7 @@ const contextMenu = ref({ show: false, x: 0, y: 0, type: '' as 'title' | 'artist
 
 watch(() => player.hasPlaybackSession, (hasSession) => {
   if (hasSession) return
+  playViewMode.value = 'cover'
   closeToolbarPopovers()
   showQueue.value = false
   showMoreSheet.value = false
@@ -1080,6 +1095,25 @@ const displayLyrics = computed(() => {
   if (player.lyrics.length) return player.lyrics
   if (fetchedLyrics.value.length) return fetchedLyrics.value
   return []
+})
+
+const lyricsModeAvailable = computed(
+  () => displayLyrics.value.length > 0 || isFetchingLyrics.value,
+)
+
+function requestPlayViewMode(requestedMode: NowPlayingViewMode) {
+  playViewMode.value = resolveNowPlayingViewMode(
+    playViewMode.value,
+    requestedMode,
+    displayLyrics.value.length > 0,
+    isFetchingLyrics.value,
+  )
+}
+
+watch(lyricsModeAvailable, (available) => {
+  if (!available && playViewMode.value === 'lyrics') {
+    requestPlayViewMode('lyrics')
+  }
 })
 
 // 更多选项面板子视图
@@ -1822,7 +1856,11 @@ const sliderActiveColor = computed(() => {
     <!-- 双栏 -->
     <div v-else class="np-body" :class="[{ 'np-body--no-header': props.hideHeader }, playViewMode === 'lyrics' ? 'np-body--lyrics-mode' : 'np-body--cover-mode']">
       <!-- 左侧：stack 固定内部高度，外层居中，切歌不上下重排 -->
-      <section class="np-left">
+      <section
+        class="np-left"
+        :inert="playViewMode === 'lyrics'"
+        :aria-hidden="playViewMode === 'lyrics'"
+      >
         <div class="np-left-stack">
         <div
           class="cover-wrap"
@@ -1830,7 +1868,15 @@ const sliderActiveColor = computed(() => {
             'cover-wrap--card': settings.coverStyle === 'card',
             'cover-wrap--disc': settings.coverStyle !== 'card',
             'cover-wrap--switching': isTrackSwitchAnimating,
+            'cover-wrap--lyrics-entry': lyricsModeAvailable,
           }"
+          :role="lyricsModeAvailable ? 'button' : undefined"
+          :tabindex="lyricsModeAvailable ? 0 : -1"
+          :aria-label="lyricsModeAvailable ? t('player.view_mode_lyrics') : undefined"
+          :title="lyricsModeAvailable ? t('player.view_mode_lyrics') : undefined"
+          @click="requestPlayViewMode('lyrics')"
+          @keydown.enter.prevent="requestPlayViewMode('lyrics')"
+          @keydown.space.prevent="requestPlayViewMode('lyrics')"
           @contextmenu="openContextMenu($event, 'cover')"
         >
           <!-- Card 模式（圆角矩形，对齐 Android） -->
@@ -1930,6 +1976,7 @@ const sliderActiveColor = computed(() => {
           </div>
         </div>
 
+        <div class="np-control-deck">
         <div
           class="np-controls"
           :class="{
@@ -1987,7 +2034,7 @@ const sliderActiveColor = computed(() => {
           <button
             class="tool-btn tool-btn--feedback fav-btn"
             :class="{ active: isFavorite }"
-            :disabled="!player.currentTrack"
+            :disabled="!canToggleFavorite"
             @click="toggleFavorite"
           >
             <transition name="np-favorite-swap" mode="out-in">
@@ -2195,10 +2242,17 @@ const sliderActiveColor = computed(() => {
           </button>
         </div>
         </div>
+        </div>
       </section>
 
       <!-- 右侧歌词 -->
       <section class="np-right" :class="{ 'np-right--switching': isTrackSwitchAnimating, 'np-right--beat-active': isVisualBeatActive }">
+        <NowPlayingViewSwitch
+          class="np-view-switch-anchor"
+          :model-value="playViewMode"
+          :lyrics-available="lyricsModeAvailable"
+          @update:model-value="requestPlayViewMode"
+        />
         <LyricsView
           v-if="displayLyrics.length > 0"
           :lyrics="displayLyrics"
@@ -3072,8 +3126,7 @@ const sliderActiveColor = computed(() => {
 
   &.np-body--cover-mode {
     .np-left {
-      flex: 1 1 46%;
-      max-width: 560px;
+      flex: 0 0 46%;
       opacity: 1;
       transform: none;
       pointer-events: auto;
@@ -3115,13 +3168,18 @@ const sliderActiveColor = computed(() => {
 .np-left {
   flex: 1;
   min-width: 0;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   align-items: center;
   /* 外层垂直居中整块 stack；stack 内部固定，切歌不重排 */
   justify-content: center;
   padding: 12px 28px 16px 40px;
-  transition: opacity 280ms ease;
+  transition:
+    flex-basis 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .np-left-stack {
@@ -3139,6 +3197,7 @@ const sliderActiveColor = computed(() => {
 }
 
 .np-right {
+  position: relative;
   flex: 1;
   min-width: 0;
   background: transparent;
@@ -3148,6 +3207,15 @@ const sliderActiveColor = computed(() => {
   padding: 0 40px 8px 8px;
   transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease, filter 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+.np-view-switch-anchor {
+  position: absolute;
+  top: 8px;
+  right: 48px;
+  z-index: 4;
+}
+
+.np-body--lyrics-mode .np-view-switch-anchor { right: 48px; }
 
 /* 封面：全屏时更大更稳 */
 .cover-wrap {
@@ -3177,6 +3245,15 @@ const sliderActiveColor = computed(() => {
 
 .cover-wrap--beat-active {
   animation: np-cover-beat-unison 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cover-wrap--lyrics-entry {
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--np-primary-container, #fff);
+    outline-offset: 5px;
+  }
 }
 
 /* Card 模式（圆角矩形，对齐 Android） */
@@ -3449,13 +3526,51 @@ const sliderActiveColor = computed(() => {
 }
 
 /* 控制栏 */
+.np-control-deck {
+  position: relative;
+  width: 100%;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 10px 6px;
+  border-radius: 8px;
+}
+
+.np-control-deck::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-color: color-mix(in srgb, var(--np-primary-container, rgba(255,255,255,0.64)) 28%, rgba(255,255,255,0.10));
+  background: rgba(20,18,24,0.38);
+  background: color-mix(in srgb, var(--np-primary-container, rgba(255,255,255,0.18)) 14%, rgba(20,18,24,0.46));
+  box-shadow: 0 12px 30px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.18);
+  backdrop-filter: blur(24px) saturate(1.14);
+  -webkit-backdrop-filter: blur(24px) saturate(1.14);
+  isolation: isolate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .np-control-deck::before {
+    background: rgba(48,44,58,0.88);
+  }
+}
+
 .np-controls {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 0;
   flex-shrink: 0;
   transition: opacity 240ms ease;
 }
@@ -3933,12 +4048,14 @@ const sliderActiveColor = computed(() => {
 
 /* 工具栏：切歌时不上下呼吸，避免整列位移 */
 .np-toolbar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 0;
   flex-shrink: 0;
   transition: opacity 240ms ease;
 }
@@ -4481,6 +4598,27 @@ const sliderActiveColor = computed(() => {
 
 .np-right--beat-active {
   animation: np-lyrics-beat-sway 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing,
+  .now-playing *,
+  .now-playing *::before,
+  .now-playing *::after {
+    animation: none !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .now-playing .spinning {
+    animation: np-spin 1s linear infinite !important;
+  }
+
+  .np-body.np-body--lyrics-mode .np-left {
+    transform: none;
+  }
 }
 </style>
 
