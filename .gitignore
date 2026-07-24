@@ -34,8 +34,6 @@ pnpm-debug.log*
 # Local agent/tooling state
 .omc/
 .spec-workflow/
-.superpowers/
-docs/superpowers/
 src-tauri/.omc/
 src-tauri/src/.omc/
 AGENTS.md

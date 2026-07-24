@@ -2,7 +2,7 @@ name: Artifacts
 
 on:
   push:
-    branches: [main, master, codex/dynamic-glass-immersive]
+    branches: [main, master]
     paths-ignore:
       - '**/*.md'
       - '**/*.mdx'
