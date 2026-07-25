@@ -45,7 +45,10 @@ pub async fn get_user_playlists(platform: String, state: State<'_, AppState>) ->
                     .and_then(|a| a.mid)
                     .ok_or_else(|| AppError::Api("Bilibili not logged in".into()))?
             };
-            let client = crate::api::bilibili::client::BiliClient::new(&state.http());
+            let client = crate::api::bilibili::client::BiliClient::new(
+                &state.http(),
+                state.cookie_jar.clone(),
+            );
             let mut resp = client.get_user_favorites(mid).await?;
 
             // For folders with empty cover but non-zero media_count,
@@ -57,7 +60,10 @@ pub async fn get_user_playlists(platform: String, state: State<'_, AppState>) ->
                     let media_count = folder["media_count"].as_u64().unwrap_or(0);
                     if cover.is_empty() && media_count > 0 {
                         if let Some(media_id) = folder["id"].as_u64() {
-                            let c = crate::api::bilibili::client::BiliClient::new(&state.http());
+                            let c = crate::api::bilibili::client::BiliClient::new(
+                                &state.http(),
+                                state.cookie_jar.clone(),
+                            );
                             futures.push(async move {
                                 let pic = c
                                     .get_fav_folder_info(media_id)
@@ -111,7 +117,10 @@ pub async fn get_user_account(platform: String, state: State<'_, AppState>) -> A
             client.get_user_account().await
         }
         "bilibili" => {
-            let client = crate::api::bilibili::client::BiliClient::new(&state.http());
+            let client = crate::api::bilibili::client::BiliClient::new(
+                &state.http(),
+                state.cookie_jar.clone(),
+            );
             client.get_user_info().await
         }
         _ => Err(AppError::Api(format!("Unsupported platform: {}", platform))),
@@ -208,7 +217,10 @@ pub async fn get_bili_fav_folder_info(
     media_id: u64,
     state: State<'_, AppState>,
 ) -> AppResult<Value> {
-    let client = crate::api::bilibili::client::BiliClient::new(&state.http());
+    let client = crate::api::bilibili::client::BiliClient::new(
+        &state.http(),
+        state.cookie_jar.clone(),
+    );
     client.get_fav_folder_info(media_id).await
 }
 
@@ -219,7 +231,10 @@ pub async fn get_bili_favorite_items(
     page: Option<u32>,
     state: State<'_, AppState>,
 ) -> AppResult<Value> {
-    let client = crate::api::bilibili::client::BiliClient::new(&state.http());
+    let client = crate::api::bilibili::client::BiliClient::new(
+        &state.http(),
+        state.cookie_jar.clone(),
+    );
     client.get_favorite_items(media_id, page.unwrap_or(1)).await
 }
 
@@ -297,12 +312,23 @@ pub async fn get_youtube_playlist_detail(
     if let Some(updated) = refreshed_auth {
         let _cookie_guard = state.auth_cookie_gate.lock().await;
         let mut auth_state = state.auth.lock();
-        if let Some(saved) = auth_state.youtube.as_mut() {
+        if let Some(saved) = auth_state.youtube.as_ref() {
             if crate::commands::auth_cmd::youtube_auth_matches(saved, &updated) {
-                *saved = updated;
-                let refreshed_cookies = saved.cookies.clone();
-                crate::auth::cookies::save_auth(&app, &auth_state);
-                crate::auth::cookies::inject_cookies(&state.cookie_jar, &refreshed_cookies);
+                let refreshed_cookies = updated.cookies.clone();
+                let mut updated_state = auth_state.clone();
+                updated_state.youtube = Some(updated);
+                match crate::auth::cookies::save_auth_strict(&app, &updated_state) {
+                    Ok(()) => {
+                        *auth_state = updated_state;
+                        crate::auth::cookies::inject_cookies(
+                            &state.cookie_jar,
+                            &refreshed_cookies,
+                        );
+                    }
+                    Err(error) => {
+                        log::error!(target: "youtube-refresh", "failed to persist playlist session refresh: {error}");
+                    }
+                }
             }
         }
     }
@@ -322,7 +348,10 @@ pub async fn validate_auth(platform: String, state: State<'_, AppState>) -> AppR
             }
         }
         "bilibili" => {
-            let client = crate::api::bilibili::client::BiliClient::new(&state.http());
+            let client = crate::api::bilibili::client::BiliClient::new(
+                &state.http(),
+                state.cookie_jar.clone(),
+            );
             client.validate_session().await
         }
         "youtube" => {
