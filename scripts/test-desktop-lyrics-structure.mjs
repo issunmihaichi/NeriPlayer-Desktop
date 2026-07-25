@@ -189,10 +189,10 @@ assert.match(settingsSource, /data-settings-action="desktop-lyrics"/)
 
 const capabilities = JSON.parse(capabilitySource)
 const lyricsCapabilities = JSON.parse(lyricsCapabilitySource)
-assert.deepEqual(capabilities.windows, ['main'])
+assert.deepEqual(capabilities.windows, ['main', 'netease-login', 'bilibili-login', 'youtube-login'])
 assert.deepEqual(lyricsCapabilities.windows, ['desktop-lyrics'])
 for (const externalLoginWindow of ['netease-login', 'bilibili-login', 'youtube-login']) {
-  assert.equal(capabilities.windows.includes(externalLoginWindow), false)
+  assert.equal(capabilities.windows.includes(externalLoginWindow), true)
   assert.equal(lyricsCapabilities.windows.includes(externalLoginWindow), false)
 }
 assert.ok(
