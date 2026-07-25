@@ -122,6 +122,7 @@
     "downloads_empty_desc": "Download songs from the Now Playing more options menu"
   },
   "common": {
+    "refresh": "Refresh",
     "retry": "Retry",
     "save": "Save",
     "cancel": "Cancel",
@@ -242,6 +243,10 @@
     "desktop_lyrics_lock": "Lock position",
     "desktop_lyrics_unlock": "Unlock position",
     "desktop_lyrics_hide": "Hide desktop lyrics",
+    "desktop_lyrics_previous": "Previous track",
+    "desktop_lyrics_play": "Play",
+    "desktop_lyrics_pause": "Pause",
+    "desktop_lyrics_next": "Next track",
     "lyric_offset": "Lyrics Offset",
     "lyric_offset_song": "This Song",
     "lyric_offset_base": "System default {value}",
@@ -592,7 +597,13 @@
     "import_config_desc": "Restore settings, sign-in state, and sync configuration",
     "export_config_success": "PC settings exported",
     "export_config_failed": "PC settings export failed",
-    "import_config_success": "PC settings imported",
+    "import_config_success": "Configuration imported",
+    "import_config_warning_listen_together_url": "The Listen Together URL was invalid; the desktop default was kept",
+    "import_config_warning_youtube_authorization": "The phone backup has YouTube Authorization but lacks the cookies required on desktop",
+    "import_config_warning_youtube_guest_cookies": "The phone backup only contains YouTube guest cookies; the desktop YouTube login was left unchanged",
+    "import_config_warning_youtube_account": "The YouTube multi-account index could not be migrated; verify the active account",
+    "import_config_warning_netease_auth": "NetEase cookies were imported, but account verification failed; the app will retry after you reconnect",
+    "import_config_warning_unknown": "Some phone settings could not be migrated",
     "import_config_failed": "PC settings import failed",
     "export_config_warning_title": "This file contains sensitive information",
     "export_config_warning_desc": "The exported PC settings include login credentials, authorization cookies, sync tokens, and passwords. Keep the file in a trusted location and never share it.",
@@ -694,6 +705,8 @@
     "export_success": "Exported {count} playlists",
     "export_failed": "Export failed",
     "import_success": "Imported {count} playlists",
+    "import_success_with_favorites": "Imported {count} playlists and {favorites} online favorites",
+    "import_online_favorites_unavailable": "This standard phone backup has no online favorites; select backup.json or backup.bin from the sync directory",
     "import_failed": "Import failed"
   },
   "listen_together": {

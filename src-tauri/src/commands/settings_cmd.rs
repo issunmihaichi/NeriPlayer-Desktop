@@ -6,14 +6,24 @@ use crate::settings::store::{self, AppSettings, SettingsLoadResult};
 use crate::state::AppState;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
-pub async fn get_settings(app: AppHandle) -> AppResult<SettingsLoadResult> {
+pub async fn get_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<SettingsLoadResult> {
+    let _config_guard = state.config_persistence_gate.lock().await;
     store::load_settings(&app)
 }
 
 #[tauri::command]
-pub async fn save_settings(app: AppHandle, settings: AppSettings) -> AppResult<AppSettings> {
+pub async fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> AppResult<AppSettings> {
+    let _config_guard = state.config_persistence_gate.lock().await;
     store::save_settings(&app, settings)
 }
 
@@ -28,7 +38,18 @@ pub async fn get_app_data_dir(app: tauri::AppHandle) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn get_log_dir() -> AppResult<String> {
-    Ok(crate::logging::log_dir().to_string_lossy().to_string())
+    let dir = crate::logging::log_dir();
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn open_log_dir(app: AppHandle) -> AppResult<()> {
+    let dir = crate::logging::log_dir();
+    std::fs::create_dir_all(&dir)?;
+    app.opener()
+        .open_path(dir.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|error| AppError::Other(error.to_string()))
 }
 
 /// 获取网易云歌曲播放 URL
